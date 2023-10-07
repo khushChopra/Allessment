@@ -6,89 +6,162 @@ import (
 	"io"
 	"net/http"
 	"os"
-
 	"github.com/google/uuid"
+	"context"
+	openai "github.com/sashabaranov/go-openai"
 )
 
-// Description to image ID map asdasd asds
+// Description to image ID map
 var globalMap map[string]string
+var OPENAI_KEY string
+
+type Message struct {
+    Role string `json:"role"`
+    Msg  string `json:"msg"`
+}
+
+type Request struct {
+    Msg     string         `json:"msg"`
+    History []Message `json:"history"`
+}
+
+func GetGPTResponse(req Request) (string, error) {
+	messages := make([]openai.ChatCompletionMessage, 0)
+	for _, v := range req.History {
+		role := v.Role
+		if role!="assistant" {
+			role = "user"
+		}
+		messages = append(messages, openai.ChatCompletionMessage{
+			Role:    role,
+			Content: v.Msg,
+		})
+	}
+	messages = append(messages, openai.ChatCompletionMessage{
+		Role:    "user",
+		Content: req.Msg,
+	})
+
+	client := openai.NewClient(OPENAI_KEY)
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT3Dot5Turbo,
+			Messages: messages,
+		},
+	)
+	if err != nil {
+		fmt.Printf("ChatCompletion error: %v\n", err)
+		return "", err
+	}
+	msg := resp.Choices[0].Message.Content
+	fmt.Println(msg)
+	return msg, nil
+}
+
+func ImageIntentChecker(msg string) (string, error){
+	client := openai.NewClient(OPENAI_KEY)
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT3Dot5Turbo,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:	openai.ChatMessageRoleSystem,
+					Content: "You need to tell if this person is trying to hold a normal conversaion or is he trying to uplaod or download an image or picture. If he wants to download, say 'download_image'. If he wants to upload, say 'upload_image'. Else say 'None'",
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: msg,
+				},
+			},
+		},
+	)
+	if err != nil {
+		fmt.Printf("ChatCompletion error: %v\n", err)
+		return "", err
+	}
+	fmt.Println(resp.Choices[0].Message.Content)
+	return resp.Choices[0].Message.Content, nil
+}
 
 func ConverseHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	// Parse the JSON request body
-	var requestBody map[string]interface{}
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&requestBody); err != nil {
+	var req Request
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+	intent, err := ImageIntentChecker(req.Msg)
 
-	// Implement your logic to process the conversation and set the response data
-	// For example:
-	responseData := map[string]interface{}{"response": "This is the response to the conversation."}
-
-	// Set the response header and send the JSON response
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(responseData)
+	if err!=nil {
+		http.Error(w, "Some issue with OpenAI", http.StatusInternalServerError)
+		return
+	}
+	if intent=="download_image" {
+		responseData := map[string]interface{}{"intent": "download_image", "msg": ""}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(responseData)
+	} else if intent=="upload_image" {
+		responseData := map[string]interface{}{"intent": "upload_image", "msg": ""}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(responseData)
+	} else {
+		res, err := GetGPTResponse(req)
+		if err!=nil {
+			http.Error(w, "Some issue with OpenAI", http.StatusInternalServerError)
+			return
+		}
+		responseData := map[string]interface{}{"intent": "", "msg": res}
+		// Set the response header and send the JSON response
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(responseData)
+	}
 }
 
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-
 	newUUID, err := uuid.NewRandom()
 	if err != nil {
 		fmt.Println("Error generating UUID:", err)
 		return
 	}
-	// Take image and string
-	// Update map and store image
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	// Parse form data
 	err = r.ParseMultipartForm(10 << 20) // 10 MB
 	if err != nil {
 		http.Error(w, "Unable to parse form", http.StatusBadRequest)
 		return
 	}
-
-	// Get the description from the form
 	description := r.FormValue("description")
-
-	// Handle the uploaded file (image)
 	file, handler, err := r.FormFile("image")
-	// fmt.Println(handler.Filename)
 	filename := newUUID.String() + "-" + handler.Filename
 	if err != nil {
 		http.Error(w, "Unable to get the image file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
-
 	destinationFile, err := os.Create(filename)
 	if err != nil {
 		fmt.Println("Error creating destination file:", err)
 		return
 	}
 	defer destinationFile.Close()
-
 	_, err = io.Copy(destinationFile, file)
 	if err != nil {
 		http.Error(w, "Unable to copy the file", http.StatusInternalServerError)
 		return
 	}
 	globalMap[description] = filename
-	// Implement your logic to save the image with a unique ID and store the mapping
-	// For example, save the image to disk with a unique ID and store the mapping in memory.
-
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "Image uploaded with description: %s", description)
 }
 
 func DownloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -96,12 +169,7 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	// Parse the description query parameter
 	description := r.URL.Query().Get("description")
-
-	// Implement your logic to find and return the best matching image based on the description
-	// For example, retrieve the image based on the description.
 	for key, value := range globalMap {
 		fmt.Printf("Key: %s, Value: %d\n", key, value)
 	}
@@ -114,28 +182,42 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer imageFile.Close()
-		// Set the response header and send the image as a download
 		w.Header().Set("Content-Disposition", "attachment; filename="+imagePath)
 		rtype := "image/png"
-		// if !strings.containes(imagePath, ".png") {
-		// 	rtype = "image/jpg"
-		// }
 		w.Header().Set("Content-Type", rtype)
 		io.Copy(w, imageFile)
-		// io.WriteString(w, "Binary image data goes here") // Replace with your image data
 	} else {
 		http.Error(w, "No file found", http.StatusBadRequest)
+		return 
 	}
+}
 
+func ImageListHandler(w http.ResponseWriter, r *http.Request) {
+	strings := make([]string, 0)
+	i := 0
+	for key, _ := range globalMap {
+		strings = append(strings, key)
+		i = i+1
+		if i>5 {
+			break
+		}
+	}
+	jsonData, err := json.Marshal(strings)
+	if err != nil {
+		http.Error(w, "JSON encoding error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
 }
 
 func main() {
+	OPENAI_KEY = os.Getenv("OPENAI_KEY")
 	globalMap = make(map[string]string)
-	// http.HandleFunc("/converse", ConverseHandler)
+	http.HandleFunc("/converse", ConverseHandler)
 	http.HandleFunc("/upload", UploadHandler)
 	http.HandleFunc("/download", DownloadHandler)
-
+	http.HandleFunc("/list", ImageListHandler)
 	port := 8080
-	fmt.Printf("Starting server on :%d...\n", port)
 	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }

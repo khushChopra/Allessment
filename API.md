@@ -7,6 +7,27 @@ Takes complete conversation for a user and find the intent,
 if intent in save or download image, give key "intent" as "save_image" or "download_image"
 else give the next dialogue in conversation
 
+Receive data = 
+{
+    "msg" : "",
+    "history": [
+        {
+            "role": "user",
+            "msg": "msg"
+        },
+        {
+            "role": "assistant",
+            "msg": "msg"
+        }
+    ]
+}
+
+Response -
+{
+    "intent": "download_image/upload_image/None",
+    "msg": "Return msg"
+}
+
 /upload
 
 Takes description as input and image
