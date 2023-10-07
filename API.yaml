@@ -1,0 +1,66 @@
+swagger: "2.0"
+info:
+  title: "Alle Assessment API"
+  description: "API documentation for Alle assessment - building an AI chat bot to have conversations and save/retrieve images."
+  version: "1.0"
+
+paths:
+  /converse:
+    post:
+      summary: "Converse with the AI chat bot"
+      description: "Takes a complete conversation for a user and finds the intent. If the intent is 'save' or 'download image', set the key 'intent' as 'save_image' or 'download_image'. Otherwise, provide the next dialogue in the conversation."
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: conversation
+          description: "The conversation input for the chat bot."
+          required: true
+          schema:
+            type: object
+      responses:
+        200:
+          description: "Successful operation"
+
+  /upload:
+    post:
+      summary: "Upload an image with description"
+      description: "Takes a description and an image as input, saves the image with a unique ID, and stores the image-to-description mapping in memory or as a file."
+      consumes:
+        - multipart/form-data
+      produces:
+        - application/json
+      parameters:
+        - in: formData
+          name: description
+          description: "Description of the image."
+          type: string
+          required: true
+        - in: formData
+          name: image
+          description: "Image file to upload."
+          type: file
+          required: true
+      responses:
+        200:
+          description: "Successful operation"
+
+  /download:
+    get:
+      summary: "Download the best matching image for a description"
+      description: "Takes a description as input and returns the best matching image as a result."
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: query
+          name: description
+          description: "Description of the image to retrieve."
+          type: string
+          required: true
+      responses:
+        200:
+          description: "Successful operation"
