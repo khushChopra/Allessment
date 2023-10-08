@@ -51,10 +51,6 @@ paths:
     get:
       summary: "Download the best matching image for a description"
       description: "Takes a description as input and returns the best matching image as a result."
-      consumes:
-        - application/json
-      produces:
-        - application/json
       parameters:
         - in: query
           name: description
