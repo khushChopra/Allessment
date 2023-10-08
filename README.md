@@ -1,5 +1,9 @@
 # Alle-ssment
-This project gives a GO API for conversation, image retrival and image download
+This project gives a GO API for AI conversation, image retrival and image download
+
+https://github.com/khushChopra/Allessment/assets/43996455/a2b6a3cf-eb22-4624-8e0e-0f2d0b022eb6
+
+
 
 Swagger API description is present in ./API.yaml
 https://editor.swagger.io/#
